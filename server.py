@@ -76,4 +76,5 @@ class Server:
 
 
 newServer = Server('127.0.0.1', 500)
+newServer.startEventLoop()
 
