@@ -1,78 +1,80 @@
-import sys
 import socket
-import selectors
-import types
+import select
 
-slct = selectors.DefaultSelector()
+#constant values
+headerLen = 10
+IPaddress = "127.0.0.1"
+portNo = 1000
 
-def startServer():
-    #check for correct number of arguments
-    if len(sys.argv) != 3:
-        print("usage:", sys.argv[0], "<host> <port>")
-        sys.exit(1)
+#create socket for server
+serverSckt = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+#set socket option to allow client to re-connect
+serverSckt.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+serverSckt.bind((IPaddress, portNo))
+serverSckt.listen()
+#create list to store all sockets, including the server socket
+socketList = [serverSckt]
+#create list of users
+clientList = {}
 
-    hostAddr, portNo = sys.argv[1], int(sys.argv[2])
-    #create socket object, bind to given address and port number
-    sckt = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sckt.bind((hostAddr, portNo))
-    sckt.listen()
-    print("listening on", (hostAddr, portNo))
-    #set to non-blocking mode
-    sckt.setblocking(False)
-    #register with selector
-    slct.register(sckt, selectors.EVENT_READ, data=None)
 
-def startEventLoop():
+def recvMessage(clientSckt):
     try:
-        while True:
-            events = slct.select(timeout=None)
-            for key, mask in events:
-                if key.data is None:
-                    acceptWrapper(key.fileobj)
-                else:
-                    serviceConnection(key, mask)
-    except KeyboardInterrupt:
-        print("caught keyboard interrupt, exiting")
-    finally:
-        slct.close()
+        msgHeader = clientSckt.recv(headerLen)
+        
+        #if no data is received, assume client closed connection
+        if not len(msgHeader):
+            return False
 
-def acceptWrapper(sckt):
-    conn, addr = sckt.accept()
-    print("Connection from", addr, "accepted")
-    #set socket to non-blocking mode
-    conn.setblocking(False)
-    #create data object to store client data
-    clientData = types.SimpleNamespace(addr=addr, inb=b"", outb=b"")
-    #create object to monitor for read/write events
-    events = selectors.EVENT_READ | selectors.EVENT_WRITE
-    #register with selector
-    slct.register(conn, events, data=clientData)
+        #get the length of the message
+        msgLen = int(msgHeader.decode("utf-8"))
+        #return a dictionary containing the message header and the message itself
+        return {"header": msgHeader, "data":clientSckt.recv(msgLen)}
+
+    except:
+        return False
 
 
-def serviceConnection(key, mask):
-    sckt = key.fileobj
-    data = key.data
+while True:
+    #read list, write list, error list
+    readSckt, _, exceptionSckt = select.select(socketList, [], socketList)
 
-    #if there is a read event
-    if mask & selectors.EVENT_READ:
-        recvData = sckt.recv(1024)
-        #if there is data to read
-        if recvData:
-            data.outb += recvData
-        #if there isn't, close the connection
+    #iterate through the read list and handle any new connections or new messages
+    for notified in readSckt:
+        #if there is a new connection
+        if notified == serverSckt:
+            #accept connection from client
+            clientSckt, clientAddr = serverSckt.accept()
+
+            newUser = recvMessage(clientSckt)
+            #check if client disconnected
+            if newUser is False:
+                continue
+            #if they did not, add their socket to the socket list
+            socketList.append(clientSckt)
+            clientList[clientSckt] = newUser
+
+            clientIP, clientPort = clientAddr[0], clientAddr[1]
+            clientName = newUser['data'].decode('utf-8')
+            print("Connection from", clientIP, clientPort, "with username:", clientName, "accepted")
         else:
-            print("closing connection to", data.addr)
-            slct.unregister(sckt)
-            sckt.close()
+            message = recvMessage(notified)
 
-    #if there is a write event
-    if mask & selectors.EVENT_WRITE:
-        #if data exists, send
-        if data.outb:
-            print("echoing", repr(data.outb), "to", data.addr)
-            sent = sckt.send(data.outb)
-            data.outb = data.outb[sent:]
+            if message is False:
+                print(f"Connection from {clientList[notified]['data'].decode('utf-8')} closed")
+                #remove socket from socket and client lists
+                socketList.remove(notified)
+                del clientList[notified]
+                continue
+            
+            user = clientList[notified]
+            print(f"Message received from {user['data'].decode('utf-8')}: {message['data'].decode('utf-8')}")
 
+            for clientSckt in clientList:
+                if clientSckt != notified:
+                    clientSckt.send(user['header'] + user['data'] + message['header'] + message['data'])
 
-startServer()
-startEventLoop()
+    #iterate through the error list and remove any problematic sockets
+    for notified in exceptionSckt:
+        socketList.remove(notified)
+        del clientList[notified]

@@ -1,82 +1,66 @@
 import sys
 import socket
-import selectors
-import types
+import select
+import errno
 
-slct = selectors.DefaultSelector()
-messages = [b"Message 1", b"Message 2"]
+#constant values
+headerLen = 10
+IPaddress = "127.0.0.1"
+portNo = 1000
 
-def receiveArgs():
-    #check if number of arguments is correct
-    if len(sys.argv) != 4:
-        print("Incorrect number of arguments:", sys.argv[0], "<host address> <port number> <number of connections>")
-        sys.exit(1)
-    
-    hostAddr, portNo, connections = sys.argv[1:4]
-    beginConnection(hostAddr, int(portNo), int(connections))
+#get username from user (console input)
+newUsername = input("Please enter your username: ")
+#create socket for the client
+clientSckt = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+clientSckt.connect((IPaddress, portNo))
+#set to non-blocking mode to prevent the server from stalling while trying to service the connection
+clientSckt.setblocking(False)
 
+username = newUsername.encode('utf-8')
+usernameHeader = f"{len(username):<{headerLen}}".encode('utf-8')
+clientSckt.send(usernameHeader + username)
 
-def beginConnection(host, port, connections):
-    serverAddr = (host, port)
-    #iterate through the different connections, creating a socket for each
-    for i in range(0, connections):
-        connid = i + 1
-        print("starting connection", connid, "to", serverAddr)
-        #create socket object,
-        #currently only IPv4, changin gto IPv6 will require the addition of 'flowinfo' and 'scopeID' in the tuple
-        sckt = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        #set to non-blocking mode to prevent the server from stalling, 
-        #preventing other sockets from being serviced
-        sckt.setblocking(False)
-        #connect to server
-        sckt.connect_ex(serverAddr)
+while True:
+    message = input(f"{newUsername} : ")
 
-        #prepare an object to store the messages being sent to the server
-        clientData = types.SimpleNamespace(
-            connID=connid,
-            msgSize=sum(len(m) for m in messages),
-            recvTotal=0,
-            messages=list(messages),
-            outb=b"",
-        )
-        #create object to monitor for read/write events
-        events = selectors.EVENT_READ | selectors.EVENT_WRITE
-        #register socket with the selector
-        slct.register(sckt, events, data=clientData)
+    if message:
+        message = message.encode('utf-8')
+        messageheader = f"{len(message) :< {headerLen}}".encode('utf-8')
 
+        clientSckt.send(messageheader + message)
 
-def serviceConnection(key, mask):
-    sckt = key.fileobj
-    data = key.data
-    if mask & selectors.EVENT_READ:
-        recvData = sckt.recv(1024)
-        if recvData:
-            print("received", repr(recvData), "from connection", data.connID)
-            data.recvTotal += len(recvData)
-        if not recvData or data.recvTotal == data.msgSize:
-            print("closing connection", data.connID)
-            slct.unregister(sckt)
-            sckt.close()
-    if mask & selectors.EVENT_WRITE:
-        if not data.outb and data.messages:
-            data.outb = data.messages.pop(0)
-        if data.outb:
-            print("sending", repr(data.outb), "to connection", data.connID)
-            sent = sckt.send(data.outb)
-            data.outb = data.outb[sent:]
+    try:
+        #receive data on the username and the message
+        while True:
+            #receive username data
+            usernameHeader = clientSckt.recv(headerLen)
 
+            #if no data is received, the connection must have been closed
+            if not len(usernameHeader):
+                print("Server closed connection")
+                sys.exit()
+            
+            #get the length of the username
+            usernameLen = int(usernameHeader.decode('utf-8'))
+            #get the first 'usernameLen' bytes and store as the username
+            username = clientSckt.recv(usernameLen).decode('utf-8')
 
-receiveArgs()
+            #receive message data
+            messageheader = clientSckt.recv(headerLen)
+            #get the length of the message
+            messageLen = int(messageheader.decode('utf-8'))
+            #get the first 'messageLen' bytes and store as the message
+            message = clientSckt.recv(messageLen).decode('utf-8')
 
-try:
-    while True:
-        events = slct.select(timeout=1)
-        if events:
-            for key, mask in events:
-                serviceConnection(key, mask)
-        if not slct.get_map():
-            break
-except KeyboardInterrupt:
-    print("caught keyboard interrupt, exiting")
-finally:
-    slct.close()
+            #print the message
+            print(f"{username} : {message}")
+
+    except IOError as e:
+        if e.errno != errno.EAGAIN and e.errno != errno.EWOULDBLOCK:
+            print("An error occurred when reading:", str(e))
+            sys.exit()
+        continue
+    except Exception as e:
+        print("An error occurred:", str(e))
+        sys.exit()
+        pass
