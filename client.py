@@ -1,18 +1,39 @@
 import sys
 import socket
-import select
+#import select
 import errno
 
 #constant values
 headerLen = 10
-IPaddress = "127.0.0.1"
+IPaddress = "::1"
 portNo = 1000
+
+def commandCheck(message):
+    #check that the first character is /
+    if message[0] == '/':
+        if "/exit" in message:
+            print("Exiting...")
+            sys.exit()
+
+        if "/help" in message:
+            showCommands()
+        else:
+            print("Invalid command, use /help to see a ful list of commands")
+
+        return True
+    else:
+        #no commands were detected
+        return False
+
+def showCommands():
+    print("Command List: \n /exit : leave the server")
+
 
 #get username from user (console input)
 newUsername = input("Please enter your username: ")
 #create socket for the client
-clientSckt = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-clientSckt.connect((IPaddress, portNo))
+clientSckt = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
+clientSckt.connect((IPaddress, portNo, 0, 0))
 #set to non-blocking mode to prevent the server from stalling while trying to service the connection
 clientSckt.setblocking(False)
 
@@ -24,6 +45,10 @@ while True:
     message = input(f"{newUsername} : ")
 
     if message:
+        ##check for user commands, if there is a command it won't need to be sent to the server
+        if commandCheck(message):
+            continue
+
         message = message.encode('utf-8')
         messageheader = f"{len(message) :< {headerLen}}".encode('utf-8')
 
@@ -63,4 +88,6 @@ while True:
     except Exception as e:
         print("An error occurred:", str(e))
         sys.exit()
-        pass
+
+
+        

@@ -3,14 +3,14 @@ import select
 
 #constant values
 headerLen = 10
-IPaddress = "127.0.0.1"
+IPaddress = "::1"
 portNo = 1000
 
 #create socket for server
-serverSckt = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+serverSckt = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
 #set socket option to allow client to re-connect
 serverSckt.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-serverSckt.bind((IPaddress, portNo))
+serverSckt.bind((IPaddress, portNo, 0 ,0))
 serverSckt.listen()
 #create list to store all sockets, including the server socket
 socketList = [serverSckt]
