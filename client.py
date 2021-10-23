@@ -1,3 +1,4 @@
+from ctypes import sizeof
 import sys
 import socket
 #import select
@@ -26,7 +27,7 @@ def commandCheck(message):
         return False
 
 def showCommands():
-    print("Command List: \n /exit : leave the server")
+    print("Command List: \n /exit : leave the server \n @'username': send a private message to 'username'")
 
 
 #get username from user (console input)
@@ -40,6 +41,20 @@ clientSckt.setblocking(False)
 username = newUsername.encode('utf-8')
 usernameHeader = f"{len(username):<{headerLen}}".encode('utf-8')
 clientSckt.send(usernameHeader + username)
+
+
+#wait to find out if username is valid
+"""
+while True:
+    validName = clientSckt.recv(1024)
+
+    if not validName:
+        print("Invalid username, please reconnect with a different name")
+        sys.exit()
+    else:
+        print("VALID USERNAME")
+        break
+"""
 
 while True:
     message = input(f"{newUsername} : ")

@@ -45,6 +45,13 @@ def getUser(message):
     #split() returns a tuple where each element is a word, we only need the first element
     return user[0]
 
+def validateUsername(username):
+    validName = True
+    for name in usernameList:
+        if username == name:
+            validName = False
+    return validName
+
 while True:
     #read list, write list, error list
     readSckt, _, exceptionSckt = select.select(socketList, [], socketList)
@@ -66,8 +73,15 @@ while True:
 
             clientIP, clientPort = clientAddr[0], clientAddr[1]
             clientName = newUser['data'].decode('utf-8')
-            usernameList.append(clientName)
-            print("Connection from", clientIP, clientPort, "with username:", clientName, "accepted")
+
+            #check if the given username already exists
+            if validateUsername(clientName):
+                usernameList.append(clientName)
+                print("Connection from", clientIP, clientPort, "with username:", clientName, "accepted")
+            else:
+                print("A user with that name already exists, closing connection...")
+                socketList.remove(clientSckt)
+                del clientList[clientSckt]
         else:
             message = recvMessage(notified)
 
